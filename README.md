@@ -12,3 +12,4 @@ Desenvolver uma aplicação, em Java, cliente-servidor que, utilizando o protoco
 - Simulação de Falhas
 - Integridade e perdas de mensagens
 - Envio de Pacotes
+- Outro método de chegagem de integridade além do checksum: CRC-16-CCITT 
