@@ -1,6 +1,6 @@
 #  Projeto de Aplicação Cliente-Servidor com UDP
 ## Objetivo Geral:
-Desenvolver uma aplicação cliente-servidor que, utilizando o protocolo UDP, ofereça um transporte confiável de dados em um canal que pode apresentar perdas de dados e erros.
+Desenvolver uma aplicação, em Java, cliente-servidor que, utilizando o protocolo UDP, ofereça um transporte confiável de dados em um canal que pode apresentar perdas de dados e erros.
 
 ## Funcionalidades que a Aplicação deve Garantir: 
 - Soma de verificação (Checksum): Para detectar erros nos pacotes recebidos.
