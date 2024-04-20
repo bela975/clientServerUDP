@@ -8,6 +8,9 @@ import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.io.*;
+import java.net.*;
+
 
 public class Client implements Runnable {
     private DatagramSocket socket;
@@ -15,6 +18,7 @@ public class Client implements Runnable {
     private int serverPort;
     private Timer timer;
     private int currentSequenceNumber = 0;
+    private String serverHost;
 
     private static final int WINDOW_SIZE = 5;
 
@@ -124,5 +128,30 @@ public class Client implements Runnable {
         Client client = new Client("localhost", 12345);
         Thread clientThread = new Thread(client);
         clientThread.start();
+
+        // Integridade CRC
+        DatagramSocket socket = new DatagramSocket();
+
+        InetAddress serverAddress = InetAddress.getByName("localhost");
+        int serverPort = 12345;
+
+        String message = "Hello, server!";
+        byte[] data = message.getBytes();
+
+        // Calcular o CRC-16 CCITT da mensagem
+        int crc = CRC16CCITT.calculate(data);
+
+        // Concatenar o CRC ao final da mensagem
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        outputStream.write(data);
+        outputStream.write((crc >> 8) & 0xFF);
+        outputStream.write(crc & 0xFF);
+        byte[] packetData = outputStream.toByteArray();
+
+        DatagramPacket packet = new DatagramPacket(packetData, packetData.length, serverAddress, serverPort);
+
+        socket.send(packet);
+
+        socket.close();
     }
-}
+    }
