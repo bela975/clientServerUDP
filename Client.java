@@ -1,4 +1,6 @@
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -53,7 +55,7 @@ public class Client implements Runnable {
                 try {
                     System.out.println("Timeout! Retransmitting packet with sequence number: " + currentSequenceNumber);
                     socket.send(packet);
-                } catch (Exception e) {
+                } catch (IOException e) {
                     System.out.println("Error during packet retransmission: " + e.getMessage());
                 }
             }
@@ -78,27 +80,49 @@ public class Client implements Runnable {
     @Override
     public void run() {
         try {
-            send("Message 1");
-            send("Message 2");
-            send("Message 3");
-        } catch (Exception e) {
+            Thread receiverThread = new Thread(() -> {
+                try {
+                    receiveMessages();
+                } catch (IOException e) {
+                    System.out.println("Error in receiveMessages: " + e.getMessage());
+                }
+            });
+
+            receiverThread.start();
+
+            // Listen for user input and send messages to the server
+            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+            while (true) {
+                String userInput = reader.readLine();
+                if (userInput.equalsIgnoreCase("exit")) {
+                    // If the user types "exit", break the loop and close the client
+                    break;
+                }
+                send(userInput);
+            }
+
+            // Close the socket after exiting the loop
+            socket.close();
+        } catch (IOException e) {
             System.out.println("Error in client thread: " + e.getMessage());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void receiveMessages() throws IOException {
+        byte[] receiveBuffer = new byte[1024];
+        DatagramPacket receivePacket = new DatagramPacket(receiveBuffer, receiveBuffer.length);
+        while (true) {
+            socket.receive(receivePacket);
+            String receivedMessage = new String(receivePacket.getData(), 0, receivePacket.getLength());
+            System.out.println("Server: " + receivedMessage);
         }
     }
 
     public static void main(String[] args) throws Exception {
         Client client = new Client("localhost", 12345);
-
-        Thread receiverThread = new Thread(() -> {
-            try {
-                client.receiveAckFromServer();
-            } catch (IOException e) {
-                System.out.println("Error in receiveAckFromServer: " + e.getMessage());
-            }
-        });
-        Thread clientThread = new Thread(client::run);
-
-        receiverThread.start();
+        Thread clientThread = new Thread(client);
         clientThread.start();
     }
 }
