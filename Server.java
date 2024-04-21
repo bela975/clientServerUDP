@@ -1,17 +1,21 @@
 import java.io.IOException;
-import java.net.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class Server {
-    private DatagramSocket serverSocket;
-    private int expectedSequenceNumber = 0;
-    private List<InetAddress> clientAddresses = new ArrayList<>();
-    private List<Integer> clientPorts = new ArrayList<>();
+    private final DatagramSocket serverSocket;
+    private final Map<InetAddress, Integer> clientEndpoints = new HashMap<>();
+    private final Map<InetAddress, Integer> clientSequenceNumbers = new HashMap<>();
+    private static final Logger LOGGER = Logger.getLogger(Server.class.getName());
 
-    public Server(int port) throws SocketException {
+    public Server(int port) throws IOException {
         this.serverSocket = new DatagramSocket(port);
-        System.out.println("Server running on port: " + port);
+        LOGGER.log(Level.INFO, "Server running on port: {0}", port);
     }
 
     public void startServer() {
@@ -25,16 +29,14 @@ public class Server {
                 InetAddress clientAddress = receivePacket.getAddress();
                 int clientPort = receivePacket.getPort();
 
-                // If new client, add to list
-                if (!clientAddresses.contains(clientAddress) || !clientPorts.contains(clientPort)) {
-                    clientAddresses.add(clientAddress);
-                    clientPorts.add(clientPort);
-                }
+                // Add the client if not already in the list
+                clientEndpoints.putIfAbsent(clientAddress, clientPort);
+                clientSequenceNumbers.putIfAbsent(clientAddress, 0);
 
                 processPacket(receivePacket);
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.log(Level.SEVERE, "IOException in startServer", e);
         } finally {
             closeServerSocket();
         }
@@ -43,17 +45,47 @@ public class Server {
     private void processPacket(DatagramPacket packet) throws IOException {
         InetAddress clientAddress = packet.getAddress();
         int clientPort = packet.getPort();
-        String message = new String(packet.getData(), 0, packet.getLength());
+        String packetData = new String(packet.getData(), 0, packet.getLength()).trim();
+        int separatorIndex = packetData.indexOf(':');
+        int receivedChecksum = Integer.parseInt(packetData.substring(0, separatorIndex));
+        String message = packetData.substring(separatorIndex + 1);
+        byte[] messageBytes = message.getBytes();
+        int calculatedChecksum = CRC16CCITT.calculate(messageBytes);
 
-        System.out.println("Received message from " + clientAddress + ":" + clientPort + ": " + message);
+        LOGGER.log(Level.INFO, "Received message from {0}:{1}: {2}, checksum: {3}", new Object[]{clientAddress, clientPort, message, receivedChecksum});
 
-        // Echo message to all clients
-        for (int i = 0; i < clientAddresses.size(); i++) {
-            InetAddress destinationAddress = clientAddresses.get(i);
-            int destinationPort = clientPorts.get(i);
+        if (receivedChecksum == calculatedChecksum) {
+            // Increment and get the current sequence number for the ACK
+            int currentSequenceNumber = clientSequenceNumbers.getOrDefault(clientAddress, 0) + 1;
+            clientSequenceNumbers.put(clientAddress, currentSequenceNumber);
+            sendAck(clientAddress, clientPort, currentSequenceNumber);
+        } else {
+            sendNak(clientAddress, clientPort, receivedChecksum);  // Send NAK for wrong checksum
+        }
 
-            if (!(clientAddress.equals(destinationAddress) && clientPort == destinationPort)) {
-                sendResponse(destinationAddress, destinationPort, message);
+        echoMessageToAllClients(message, clientAddress, clientPort);
+    }
+
+    private void sendAck(InetAddress clientAddress, int clientPort, int sequenceNumber) throws IOException {
+        String ackMessage = "ACK" + sequenceNumber;
+        byte[] ackData = ackMessage.getBytes();
+        DatagramPacket ackPacket = new DatagramPacket(ackData, ackData.length, clientAddress, clientPort);
+        LOGGER.log(Level.INFO, "Sending ACK for sequence number: {0} to {1}:{2}", new Object[]{sequenceNumber, clientAddress, clientPort});
+        serverSocket.send(ackPacket);
+    }
+
+    private void sendNak(InetAddress clientAddress, int clientPort, int wrongChecksum) throws IOException {
+        String nakMessage = "NAK" + wrongChecksum;
+        byte[] nakData = nakMessage.getBytes();
+        DatagramPacket nakPacket = new DatagramPacket(nakData, nakData.length, clientAddress, clientPort);
+        LOGGER.log(Level.INFO, "Sending NAK for wrong checksum: {0} to {1}:{2}", new Object[]{wrongChecksum, clientAddress, clientPort});
+        serverSocket.send(nakPacket);
+    }
+
+    private void echoMessageToAllClients(String message, InetAddress senderAddress, int senderPort) throws IOException {
+        for (Map.Entry<InetAddress, Integer> entry : clientEndpoints.entrySet()) {
+            if (!senderAddress.equals(entry.getKey()) || senderPort != entry.getValue()) {
+                sendResponse(entry.getKey(), entry.getValue(), message);
             }
         }
     }
@@ -70,35 +102,17 @@ public class Server {
         }
     }
 
-    public static void main(String[] args) throws IOException {
-        Server server = new Server(1234);
-        server.startServer();
-
-        // Integridade CRC
-        DatagramSocket socket = new DatagramSocket();
-
-        byte[] buffer = new byte[1024];
-        DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-
-        socket.receive(packet);
-
-        // Extrair os dados recebidos
-        byte[] receivedData = packet.getData();
-        int dataLength = packet.getLength();
-
-        // Verificar integridade usando CRC-16 CCITT
-        byte[] messageData = new byte[dataLength - 2]; // Exclui os 2 bytes do CRC
-        System.arraycopy(receivedData, 0, messageData, 0, messageData.length);
-
-        int receivedCRC = ((receivedData[dataLength - 2] & 0xFF) << 8) | (receivedData[dataLength - 1] & 0xFF);
-        int calculatedCRC = CRC16CCITT.calculate(messageData);
-
-        if (receivedCRC == calculatedCRC) {
-            System.out.println("Mensagem recebida com sucesso: " + new String(messageData));
-        } else {
-            System.out.println("Erro de integridade na mensagem.");
+    public static void main(String[] args) {
+        if (args.length < 1) {
+            LOGGER.log(Level.SEVERE, "Usage: java Server <port_number>");
+            return;
         }
-
-        socket.close();
+        try {
+            int port = Integer.parseInt(args[0]);
+            Server server = new Server(port);
+            server.startServer();
+        } catch (IOException ex) {
+            LOGGER.log(Level.SEVERE, "Failed to initialize the server", ex);
+        }
     }
-    }
+}
