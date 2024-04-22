@@ -1,13 +1,9 @@
-import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.util.LinkedList;
-import java.util.Queue;
-import java.util.Random;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -32,13 +28,22 @@ public class Client implements Runnable {
         this.timer = new Timer();
     }
 
-    public void send(String message, boolean simulateError) throws IOException {
+    public void send(String message, boolean simulateCorruption) throws IOException {
         if (!socket.isClosed()) {
-            if (simulateError && random.nextBoolean()) {
-                message = "ERROR " + message;  // Simulate error by prefixing with "ERROR"
+            byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
+            int checksum = CRC16CCITT.calculate(messageBytes);
+
+            if (simulateCorruption && shouldSimulateError()) {
+                // Simulate corruption by modifying the checksum
+                checksum = checksum ^ 0xFFFF; // Applying bitwise XOR with all 1s
             }
-            messageQueue.add(message);
-            sendNextMessages();
+
+            String packetData = checksum + ":" + message;
+            byte[] packetBytes = packetData.getBytes(StandardCharsets.UTF_8);
+            DatagramPacket packet = new DatagramPacket(packetBytes, packetBytes.length, serverAddress, serverPort);
+            socket.send(packet);
+            LOGGER.log(Level.INFO, "Sent packet with checksum: {0}", checksum);
+            startTimer(packet, currentSequenceNumber++);
         } else {
             LOGGER.log(Level.INFO, "Socket is closed, cannot send messages.");
         }
@@ -97,22 +102,31 @@ public class Client implements Runnable {
         }
     }
 
+
+    private boolean shouldSimulateError() {
+        // Simulate error with 20% probability
+         return random.nextDouble() < 0.2;
+    }
+
     @Override
     public void run() {
         Thread ackReceiverThread = new Thread(this::receiveAckFromServer);
         ackReceiverThread.start();
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
-            String userInput;
-            while ((userInput = reader.readLine()) != null && running) {
+        try {
+            Scanner scanner = new Scanner(System.in);
+            while (running) {
+                String userInput = scanner.nextLine();
                 if ("exit".equalsIgnoreCase(userInput)) {
                     running = false;
                     break;
                 }
-                send(userInput, false);  // Change second parameter to true to simulate errors
+                try {
+                    send(userInput, false);  // Change second parameter to true to simulate errors
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             }
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Error in client thread", e);
         } finally {
             timer.cancel();
             socket.close();
