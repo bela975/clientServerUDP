@@ -44,7 +44,7 @@ public class Client implements Runnable {
 
     // Construtor do cliente
     public Client(String address, int port) throws IOException {
-        this.socket = new DatagramSocket();
+        this.socket = new DatagramSocket(); //Datagram socket é o que permite que o cliente receba e envie mensagens
         this.serverAddress = InetAddress.getByName(address);
         this.serverPort = port;
         this.timer = new Timer();
@@ -79,7 +79,7 @@ public class Client implements Runnable {
         // Enquanto a fila de mensagens não estiver vazia e o número de mensagens enviadas ainda estiver dentro do tamanho da janela deslizante
         while (!messageQueue.isEmpty() && currentSequenceNumber - lastConfirmedSequenceNumber <= WINDOW_SIZE) {
             String message = messageQueue.poll(); // Remove e obtém a primeira mensagem da fila
-            // ... Lógica para enviar a mensagem ...
+
         }
     }
 
