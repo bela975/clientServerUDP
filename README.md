@@ -13,3 +13,12 @@ Desenvolver uma aplicação, em Java, cliente-servidor que, utilizando o protoco
 - Integridade e perdas de mensagens
 - Envio de Pacotes
 - Outro método de chegagem de integridade além do checksum: CRC-16-CCITT 
+
+
+## Grupo:
+- Ester Carvalho
+- Gislaine Reis
+- Isabela Spinelli
+- Maria Júlia Pessoa
+- Maria Luísa Arruda
+- Marina Frias
